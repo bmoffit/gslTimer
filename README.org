@@ -1,0 +1,51 @@
+#+TITLE: gslTimer library
+
+gslTimer is a library for measuring time differences in a process.
+
+* Example usage
+#+begin_src C
+  /* Create the gslTimer object */
+  gslTimer_t gt;
+
+  uint32_t ntimers = 10;
+  uint32_t min_time = 0;
+  uint32_t max_time = 500000;
+  uint32_t bin_size = 100;
+
+  /* Initialize gslTimer */
+  gslTimerInit(ntimers, min_time, max_time, bin_size, &gt);
+
+  struct timespec tsWait = {0,150E3};
+
+  /* Loop and measure some times */
+  for(i = 0; i < n; i++)
+    {
+      gslTimerStartTime(&gt);     // Start Time
+      gslTimerRecordTime(&gt);    //  Measurement 0: Now - StartTime
+      gslTimerRecordTime(&gt);    //  Measurement 1: Now - Measurement 0
+      nanosleep(&tsWait, NULL);
+      gslTimerRecordTime(&gt);    //  Measurement 2: Now - Measurement 1
+      gslTimerRecordTime(&gt);    //  ...
+      gslTimerEndTime(&gt);       //  Last Measurement n: Now - Measurement n-1
+    }
+
+
+  /* print out timer statistics */
+  gslTimerPrintStats(&gt);
+
+  /* Free all memory allocated by the library */
+  gslTimerFree(&gt);
+
+#+end_src
+
+* Example output
+#+begin_example
+ Allocated Histograms = 10   Used = 5
+ 0: n = 10000.0   mean = 51.5  sigma = 69.9  
+ 1: n = 10000.0   mean = 151.6  sigma = 109.1  
+ 2: n = 10000.0   mean = 207621.5  sigma = 2678.0  
+ 3: n = 10000.0   mean = 160.6  sigma = 184.7  
+ 4: n = 10000.0   mean = 153.5  sigma = 140.1  
+TOTAL:
+    n = 10000.0   mean = 208074.1  sigma = 2786.7  
+#+end_example
