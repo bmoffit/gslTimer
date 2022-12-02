@@ -26,7 +26,7 @@ gslTimer is a library for measuring time differences in a process.
       nanosleep(&tsWait, NULL);
       gslTimerRecordTime(&gt);    //  Measurement 2: Now - Measurement 1
       gslTimerRecordTime(&gt);    //  ...
-      gslTimerEndTime(&gt);       //  Last Measurement n: Now - Measurement n-1
+      gslTimerEndTime(&gt);       //  Last Measurement m: Now - Measurement m-1
     }
 
 
