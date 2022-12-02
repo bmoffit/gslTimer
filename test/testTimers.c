@@ -20,23 +20,25 @@ main(int argc, char *argv[])
 {
   int i, n=10000;
 
-  gslTimerInit(10, 0, 500000, 100);
+  gslTimer_t gt;
+
+  gslTimerInit(10, 0, 500000, 100, &gt);
 
   struct timespec tsWait = {0,150E3};
 
   for(i = 0; i < n; i++)
     {
-      gslTimerStartTime();
-      gslTimerRecordTime();//0
-      gslTimerRecordTime();//1
+      gslTimerStartTime(&gt);
+      gslTimerRecordTime(&gt);//0
+      gslTimerRecordTime(&gt);//1
       nanosleep(&tsWait, NULL);
-      gslTimerRecordTime();//2
-      gslTimerRecordTime();//3
-      gslTimerEndTime();//4
+      gslTimerRecordTime(&gt);//2
+      gslTimerRecordTime(&gt);//3
+      gslTimerEndTime(&gt);//4
     }
 
-  gslTimerPrintStats();
-  gslTimerFree();
+  gslTimerPrintStats(&gt);
+  gslTimerFree(&gt);
 
   exit(0);
 }

@@ -8,34 +8,40 @@
  *            Phone: (757) 269-5660             12000 Jefferson Ave.
  *            Fax:   (757) 269-5800             Newport News, VA 23606
  *
- * @file      templateLib.c
- * @brief     Library Template for generic use
+ * @file      gslTimerLib.c
+ * @brief     Library for measuring processing times, using gsl
  *
  */
-#include <time.h>
 #include <stdio.h>
-#include <gsl/gsl_histogram.h>
 #include "gslTimerLib.h"
 
-gsl_histogram *gslTimerHist[MAX_GSL_TIMER];
-gsl_histogram *gslTimerTotalHist;
-struct timespec tsStart, tsPrevious;
-uint32_t currentTimer = 0;
-uint32_t maxTimerUsed = 0;
-uint32_t gslTimerNHist = 0;
-int32_t gslTimerDebug = 0;
+#define gtERROR(format, ...) {fprintf(stderr,"%s: ERROR: ",__func__); fprintf(stderr,format, ## __VA_ARGS__);}
+#define gtDEBUG(format, ...) {if(gtHandle->Debug==1) {fprintf(stdout,"%s: DEBUG:",__func__); fprintf(stdout,format, ## __VA_ARGS__);}}
 
-#define gtERROR(format, ...) {fprintf(stderr,"%s: ERROR: ",__FUNCTION__); fprintf(stderr,format, ## __VA_ARGS__);}
-#define gtDEBUG(format, ...) {if(gslTimerDebug==1) {fprintf(stdout,"%s: DEBUG:",__FUNCTION__); fprintf(stdout,format, ## __VA_ARGS__);}}
-
+/**
+ * @brief Initialize gslTimer_t handle
+ * @details Initialize gslTimer_t handle created by user with timer parameters
+ * @param[in] ntimers Maximum timers to allocate
+ * @param[in] min_time Minimum value of time
+ * @param[in] max_time Maximum value of time
+ * @param[in] bin_size Size of time bins
+ * @param[out] gtHandle gslTimer_t handle to be initialized
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerInit(uint32_t ntimers, uint32_t min_time, uint32_t max_time, uint32_t bin_size)
+gslTimerInit(uint32_t ntimers, uint32_t min_time, uint32_t max_time, uint32_t bin_size, gslTimer_t *gtHandle)
 {
   if(ntimers > MAX_GSL_TIMER)
     {
       gtERROR("Invalid ntimers (%d).  Max = %d\n", ntimers, MAX_GSL_TIMER);
       return -1;
     }
+
+  /* Initialize gtHandle */
+  gtHandle->currentTimer = 0;
+  gtHandle->maxTimerUsed = 0;
+  gtHandle->NHist = 0;
+  gtHandle->Debug = 0;
 
   /* histogram stuff */
   uint32_t ihist, nbins;
@@ -44,103 +50,132 @@ gslTimerInit(uint32_t ntimers, uint32_t min_time, uint32_t max_time, uint32_t bi
 
   for(ihist = 0; ihist < ntimers; ihist++)
     {
-      gslTimerHist[ihist] = gsl_histogram_alloc (nbins);
-      gsl_histogram_set_ranges_uniform (gslTimerHist[ihist], min_time, max_time);
-      gsl_histogram_reset(gslTimerHist[ihist]);
-      gslTimerNHist++;
+      gtHandle->Hist[ihist] = gsl_histogram_alloc (nbins);
+      gsl_histogram_set_ranges_uniform (gtHandle->Hist[ihist], min_time, max_time);
+      gsl_histogram_reset(gtHandle->Hist[ihist]);
+      gtHandle->NHist++;
     }
 
 
-  gslTimerTotalHist = gsl_histogram_alloc (nbins);
-  gsl_histogram_set_ranges_uniform (gslTimerTotalHist, min_time, max_time);
-  gsl_histogram_reset(gslTimerTotalHist);
-
+  gtHandle->TotalHist = gsl_histogram_alloc (nbins);
+  gsl_histogram_set_ranges_uniform (gtHandle->TotalHist, min_time, max_time);
+  gsl_histogram_reset(gtHandle->TotalHist);
 
   return 0;
 }
 
+/**
+ * @brief Reset the timer histograms
+ * @details Reset the all timer histograms and set current timer to 0
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerReset()
+gslTimerReset(gslTimer_t *gtHandle)
 {
   uint32_t ihist;
 
-  for(ihist = 0; ihist < gslTimerNHist; ihist++)
+  for(ihist = 0; ihist < gtHandle->NHist; ihist++)
     {
-      gsl_histogram_reset(gslTimerHist[ihist]);
+      gsl_histogram_reset(gtHandle->Hist[ihist]);
     }
-  gsl_histogram_reset(gslTimerTotalHist);
+  gsl_histogram_reset(gtHandle->TotalHist);
 
-  currentTimer = 0;
+  gtHandle->currentTimer = 0;
 
   return 0;
 }
 
+/**
+ * @brief Free all timer histograms
+ * @details Free all timer histograms
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerFree()
+gslTimerFree(gslTimer_t *gtHandle)
 {
   uint32_t ihist;
 
-  for(ihist = 0; ihist < gslTimerNHist; ihist++)
+  for(ihist = 0; ihist < gtHandle->NHist; ihist++)
     {
-      gsl_histogram_free(gslTimerHist[ihist]);
+      gsl_histogram_free(gtHandle->Hist[ihist]);
     }
-  gsl_histogram_free(gslTimerTotalHist);
+  gsl_histogram_free(gtHandle->TotalHist);
 
   return 0;
 }
 
+/**
+ * @brief Mark the start time of the instance
+ * @details Save the current time as the starting time for the instance
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerStartTime()
+gslTimerStartTime(gslTimer_t *gtHandle)
 {
   int32_t rval = 0;
 
   /* Check if there's a previous measurement */
-  if(currentTimer > 0)
+  if(gtHandle->currentTimer > 0)
     {
-      int32_t diff_total = tsPrevious.tv_nsec - tsStart.tv_nsec +
-	1000000000 * (tsPrevious.tv_sec - tsStart.tv_sec);
+      int32_t diff_total = gtHandle->tsPrevious.tv_nsec - gtHandle->tsStart.tv_nsec +
+	1000000000 * (gtHandle->tsPrevious.tv_sec - gtHandle->tsStart.tv_sec);
 
-      rval = gsl_histogram_increment (gslTimerTotalHist, diff_total);
+      rval = gsl_histogram_increment (gtHandle->TotalHist, diff_total);
 
       gtDEBUG(" tot: rval = %d, diff_total = %d\n",
 	      rval, diff_total);
 
     }
 
-  rval = clock_gettime(CLOCK_MONOTONIC, &tsStart);
+  rval = clock_gettime(CLOCK_MONOTONIC, &gtHandle->tsStart);
 
-  tsPrevious.tv_sec = tsStart.tv_sec;
-  tsPrevious.tv_nsec = tsStart.tv_nsec;
-  currentTimer = 0;
+  gtHandle->tsPrevious.tv_sec = gtHandle->tsStart.tv_sec;
+  gtHandle->tsPrevious.tv_nsec = gtHandle->tsStart.tv_nsec;
+  gtHandle->currentTimer = 0;
 
   return rval;
 }
 
+/**
+ * @brief Mark the end time of the instance
+ * @details Save the current time as the end time for the instance
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerEndTime()
+gslTimerEndTime(gslTimer_t *gtHandle)
 {
   int32_t rval = 0;
 
-  gslTimerRecordTime();
+  gslTimerRecordTime(gtHandle);
   /* Check if there's a previous measurement */
-  if(currentTimer > 0)
+  if(gtHandle->currentTimer > 0)
     {
-      int32_t diff_total = tsPrevious.tv_nsec - tsStart.tv_nsec +
-	1000000000 * (tsPrevious.tv_sec - tsStart.tv_sec);
+      int32_t diff_total = gtHandle->tsPrevious.tv_nsec - gtHandle->tsStart.tv_nsec +
+	1000000000 * (gtHandle->tsPrevious.tv_sec - gtHandle->tsStart.tv_sec);
 
-      rval = gsl_histogram_increment (gslTimerTotalHist, diff_total);
+      rval = gsl_histogram_increment (gtHandle->TotalHist, diff_total);
 
       gtDEBUG(" tot: rval = %d, diff_total = %d\n",
 	      rval, diff_total);
 
-      currentTimer = 0;
+      gtHandle->currentTimer = 0;
     }
 
   return 0;
 }
 
+/**
+ * @brief Mark the current time of the instance
+ * @details Use the current time to save the time difference from the start time for this instance.
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerRecordTime()
+gslTimerRecordTime(gslTimer_t *gtHandle)
 {
   int32_t rval = 0;
   int32_t diff_previous = 0;
@@ -149,43 +184,49 @@ gslTimerRecordTime()
   rval = clock_gettime(CLOCK_MONOTONIC, &tsCurrent);
 
   /* only fill the timer's we've allocated */
-  if(currentTimer < gslTimerNHist)
+  if(gtHandle->currentTimer < gtHandle->NHist)
     {
-      diff_previous = tsCurrent.tv_nsec - tsPrevious.tv_nsec +
-	1000000000 * (tsCurrent.tv_sec - tsPrevious.tv_sec);
+      diff_previous = tsCurrent.tv_nsec - gtHandle->tsPrevious.tv_nsec +
+	1000000000 * (tsCurrent.tv_sec - gtHandle->tsPrevious.tv_sec);
 
-      rval = gsl_histogram_increment (gslTimerHist[currentTimer], diff_previous);
+      rval = gsl_histogram_increment (gtHandle->Hist[gtHandle->currentTimer], diff_previous);
       gtDEBUG("%3d: rval = %d, diff_previous = %d\n",
-	      currentTimer, rval, diff_previous);
-      maxTimerUsed = currentTimer;
-      currentTimer++;
+	      gtHandle->currentTimer, rval, diff_previous);
+      gtHandle->maxTimerUsed = gtHandle->currentTimer;
+      gtHandle->currentTimer++;
     }
 
-  tsPrevious = tsCurrent;
+  gtHandle->tsPrevious = tsCurrent;
 
   return rval;
 }
 
+/**
+ * @brief Print Summary of timers
+ * @details Print to standard out, the statistcs of the histograms for the provided gslTimer_t handle.
+ * @param[inout] gtHandle gslTimer_t handle
+ * @return 0 if successful, otherwise -1
+ */
 int32_t
-gslTimerPrintStats()
+gslTimerPrintStats(gslTimer_t *gtHandle)
 {
   uint32_t ihist;
 
   printf(" Allocated Histograms = %d   Used = %d\n",
-	 gslTimerNHist, maxTimerUsed);
+	 gtHandle->NHist, gtHandle->maxTimerUsed + 1);
 
-  for(ihist = 0; ihist <= maxTimerUsed; ihist++)
+  for(ihist = 0; ihist <= gtHandle->maxTimerUsed; ihist++)
     {
       printf("%2d: n = %.1f   mean = %4.1f  sigma = %4.1f  \n",
-	     ihist,  gsl_histogram_sum(gslTimerHist[ihist]),
-	     gsl_histogram_mean(gslTimerHist[ihist]),
-	     gsl_histogram_sigma(gslTimerHist[ihist]));
+	     ihist,  gsl_histogram_sum(gtHandle->Hist[ihist]),
+	     gsl_histogram_mean(gtHandle->Hist[ihist]),
+	     gsl_histogram_sigma(gtHandle->Hist[ihist]));
     }
 
   printf("TOTAL:\n    n = %.1f   mean = %4.1f  sigma = %4.1f  \n",
-	 gsl_histogram_sum(gslTimerTotalHist),
-	 gsl_histogram_mean(gslTimerTotalHist),
-	 gsl_histogram_sigma(gslTimerTotalHist));
+	 gsl_histogram_sum(gtHandle->TotalHist),
+	 gsl_histogram_mean(gtHandle->TotalHist),
+	 gsl_histogram_sigma(gtHandle->TotalHist));
 
   return 0;
 }
