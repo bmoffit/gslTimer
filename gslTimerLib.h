@@ -12,11 +12,11 @@
  *
  */
 #include <stdint.h>
-#define MAX_ROL_TIMER 10
+#define MAX_GSL_TIMER 10
 
-int32_t rolTimerInit(uint32_t ntimers, uint32_t min_time, uint32_t max_time, uint32_t bin_size);
-int32_t rolTimerReset();
-int32_t rolTimerFree();
-int32_t rolTimerStartTime();
-int32_t rolTimerRecordTime();
-int32_t rolTimerPrintStats();
+int32_t gslTimerInit(uint32_t ntimers, uint32_t min_time, uint32_t max_time, uint32_t bin_size);
+int32_t gslTimerReset();
+int32_t gslTimerFree();
+int32_t gslTimerStartTime();
+int32_t gslTimerRecordTime();
+int32_t gslTimerPrintStats();

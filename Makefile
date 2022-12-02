@@ -10,7 +10,7 @@
 #    Makefile for readout list timer library
 #
 #
-BASENAME=rolTimer
+BASENAME=gslTimer
 #
 #
 INSTALL_INC ?= build/include
